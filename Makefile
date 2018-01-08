@@ -1,4 +1,4 @@
-BINARIES := ccp.bin bdos.bin
+BINARIES := ccp.bin bdos.bin bios.bin
 DIFF := meld
 ASM ?= z80asm
 
