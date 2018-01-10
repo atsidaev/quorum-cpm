@@ -1,5 +1,5 @@
 	INCLUDE "defines.inc"
-	INCLUDE "bios.asm"
+	INCLUDE "bios.inc"
 
 	ORG BDOS_START
 
