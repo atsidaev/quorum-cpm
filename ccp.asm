@@ -10,7 +10,8 @@ CBASE:	JP	COMMAND		;execute command processor (ccp).
 ; (actual length), (char #1), (char #2), (char #3), etc.
 ;
 INBUFF:	DEFB	127		;length of input buffer.
-	DEFB	0		;current length of contents.
+BOOTCMD:
+	DEFB	0		;current length of contents. Also the boot command is stored here.
 	DEFB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 	DEFB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 	DEFB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0

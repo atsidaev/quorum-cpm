@@ -1,4 +1,4 @@
-BINARIES := ccp.bin bdos.bin bios.bin
+BINARIES := ccp.bin bdos.bin bios.bin bootloader.bin cpmstart.bin
 DIFF := meld
 ASM ?= z80asm
 
@@ -15,6 +15,7 @@ FAT_OFFSET := 0x5000
 disk.qdi: cpm
 	dd if=/dev/zero of=$@ bs=1024 count=$$[80*2*5]
 	dd if=bootloader.bin of=$@ conv=notrunc bs=1
+	dd if=cpmstart.bin of=$@ seek=$$[0x100] conv=notrunc bs=1
 	dd if=ccp.bin of=$@ seek=$$[$(CCP_START) - $(LOAD_ADDR)] conv=notrunc bs=1
 	dd if=bdos.bin of=$@ seek=$$[$(BDOS_START) - $(LOAD_ADDR)] conv=notrunc bs=1
 	dd if=bootscreen.scr of=$@ seek=$$[$(SCREEN_START) - $(LOAD_ADDR)] conv=notrunc bs=1
