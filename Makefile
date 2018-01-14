@@ -1,6 +1,7 @@
 BINARIES := ccp.bin bdos.bin bios.bin bootloader.bin cpmstart.bin
 DIFF := meld
 ASM ?= z80asm
+SHELL := bash
 
 LOAD_ADDR := 0xA880
 
