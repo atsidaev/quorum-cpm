@@ -1,4 +1,5 @@
 		include "defines.inc"
+		include "quorum_hw.inc"
 
 CPM_INIT_LENGTH:	EQU 100h
 AINTM1:	EQU 0038h
@@ -28,12 +29,12 @@ loc_A988:
 
 loc_A98D:
 		ld	a, 3
-		out	(0), a
-		ld	bc, 80FDh
+		out	(PORT_MEMORY0), a
+		ld	bc, PORT_CPM
 		ld	a, 84h
 		out	(c), a
 		ld	hl, BUFD1
-		ld	bc, 7FFDh
+		ld	bc, PORT_ZX128
 		ld	a, 1Fh		; page 7
 		out	(c), a
 		ld	(hl), a

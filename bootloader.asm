@@ -1,4 +1,5 @@
 		include "defines.inc"
+		include "quorum_hw.inc"
 BOOTLOADER_LENGTH:	EQU 100h
 CPM_INIT_LENGTH:	EQU 100h
 
@@ -52,14 +53,14 @@ READ_OS:
 
 loc_8843:
 		inc	a
-		out	(82h), a
+		out	(PORT_WD93_SECTOR), a
 		ex	de, hl
 		call	READ_SECTOR
 		jr	nz, EXIT_BOOT	; deselect drive and turn off the motor
 		dec	b
 		jr	z, ALL_READ	; if all sectors were read, execute ENTRY_POINT
 		ex	de, hl		; otherwise point headers to next sector
-		in	a, (82h)
+		in	a, (PORT_WD93_SECTOR)
 		cp	(hl)
 		jr	c, loc_8843
 		ld	a, (SINGLE_SIDE)
@@ -72,13 +73,13 @@ loc_8843:
 _select_bottom_side:			; bottom disk side
 		set	4, a
 		ld	(FLOPPY_STATUS), a
-		out	(85h), a
+		out	(PORT_FDD_STATUS), a
 		jr	READ_OS		; read sectors starting	from first one
 
 _select_top_side:
 		res	4, a
 		ld	(FLOPPY_STATUS), a
-		out	(85h), a
+		out	(PORT_FDD_STATUS), a
 
 NEXT_TRACK:
 		ld	a, 58h ; 'X'    ; WD1793 Step In command
@@ -91,22 +92,22 @@ ALL_READ:
 
 EXIT_BOOT:
 		ld	a, 0		; deselect drive and turn off the motor
-		out	(85h), a
-		out	(0), a		; switch lower memory to ROM
+		out	(PORT_FDD_STATUS), a
+		out	(PORT_MEMORY0), a		; switch lower memory to ROM
 		jp	0		; reset
 
 READ_SECTOR:
 		ld	a, 80h
-		out	(80h), a	; read sector
+		out	(PORT_WD93_COMMAND_STATUS), a	; read sector
 		call	_delay
 		ld	c, 83h
 		call	READ_DATA
-		in	a, (80h)
+		in	a, (PORT_WD93_COMMAND_STATUS)
 		and	1Dh
 		ret
 
 READ_DATA:
-		in	a, (80h)
+		in	a, (PORT_WD93_COMMAND_STATUS)
 		rrca
 		ret	nc
 		rrca
@@ -115,10 +116,10 @@ READ_DATA:
 		jr	READ_DATA
 
 STEP_IN:
-		out	(80h), a
+		out	(PORT_WD93_COMMAND_STATUS), a
 		call	_delay
 _step_in_l:
-		in	a, (80h)
+		in	a, (PORT_WD93_COMMAND_STATUS)
 		rrca			; check	BUSY flag
 		ret	nc
 		jr	_step_in_l

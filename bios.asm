@@ -1,4 +1,5 @@
 	INCLUDE "defines.inc"
+	INCLUDE "quorum_hw.inc"
 
 SCREEN1:	EQU 0C000h
 BANK_SWITCH_0040: EQU 40h
@@ -330,7 +331,7 @@ loc_DCB0:
 		dec	(hl)
 		jr	nz, loc_DCC2
 		xor	a
-		out	(85h), a
+		out	(PORT_FDD_STATUS), a
 		ld	(MFDCUP), a
 loc_DCC2:
 		call	DOPINT
@@ -604,15 +605,15 @@ sub_DE6E:
 		ld	d, (hl)
 		inc	hl
 		ld	a, (hl)
-		out	(85h), a
+		out	(PORT_FDD_STATUS), a
 		ld	(MFDCUP), a
 		call	sub_DFE0
 		dec	de
 		inc	hl
 		ld	a, (de)
-		out	(81h), a
+		out	(PORT_WD93_TRACK), a
 		ld	a, (hl)
-		out	(83h), a
+		out	(PORT_WD93_DATA), a
 		or	a
 		ld	c, 18h
 		jr	nz, loc_DE8A
@@ -621,7 +622,7 @@ loc_DE8A:
 		ld	(de), a
 		inc	hl
 		ld	a, (hl)
-		out	(82h), a
+		out	(PORT_WD93_SECTOR), a
 		dec	de
 		dec	de
 		dec	de
@@ -629,10 +630,10 @@ loc_DE8A:
 		ld	a, (de)
 		and	3
 		or	c
-		out	(80h), a
+		out	(PORT_WD93_COMMAND_STATUS), a
 		call	sub_E015
 loc_DE9C:
-		in	a, (80h)
+		in	a, (PORT_WD93_COMMAND_STATUS)
 		rrca
 		jr	c, loc_DE9C
 		ei
@@ -784,12 +785,12 @@ loc_DF89:
 		push	hl
 		di
 		ld	a, 84h
-		out	(80h), a
+		out	(PORT_WD93_COMMAND_STATUS), a
 		call	sub_E015
 		ld	c, 83h
 		call	sub_DFAA
 		pop	hl
-		in	a, (80h)
+		in	a, (PORT_WD93_COMMAND_STATUS)
 		and	7Dh
 		jr	z, loc_E004
 		djnz	loc_DF89
@@ -798,7 +799,7 @@ loc_DFA3:
 		ld	a, 80h
 		jr	loc_E004
 sub_DFAA:
-		in	a, (80h)
+		in	a, (PORT_WD93_COMMAND_STATUS)
 		rrca
 		ret	nc
 		rrca
@@ -809,18 +810,18 @@ sub_DFB7:
 		call	sub_DFE0
 		di
 		ld	a, 0A4h
-		out	(80h), a
+		out	(PORT_WD93_COMMAND_STATUS), a
 		call	sub_E015
-		in	a, (80h)
+		in	a, (PORT_WD93_COMMAND_STATUS)
 		and	40h
 		jr	nz, loc_DFA3
 		ld	c, 83h
 		call	sub_DFD3
-		in	a, (80h)
+		in	a, (PORT_WD93_COMMAND_STATUS)
 		and	7Dh
 		jr	loc_E004
 sub_DFD3:
-		in	a, (80h)
+		in	a, (PORT_WD93_COMMAND_STATUS)
 		rrca
 		ret	nc
 		rrca
@@ -828,7 +829,6 @@ sub_DFD3:
 		outi
 		jp	sub_DFD3
 sub_DFE0:
-					
 		di
 		ld	a, 64h
 		ld	(COUNMO), a
@@ -836,16 +836,15 @@ sub_DFE0:
 		bit	5, a
 		jr	nz, sub_DFF7
 		set	5, a
-		out	(85h), a
+		out	(PORT_FDD_STATUS), a
 		ld	(MFDCUP), a
 		call	sub_E00A
 sub_DFF7:
-					
 		ld	a, 0D0h
-		out	(80h), a
+		out	(PORT_WD93_COMMAND_STATUS), a
 		call	sub_E015
 loc_DFFE:
-		in	a, (80h)
+		in	a, (PORT_WD93_COMMAND_STATUS)
 		rrca
 		jr	c, loc_DFFE
 		xor	a
@@ -880,7 +879,7 @@ sub_E01B:
 		ld	d, h
 		ld	e, l
 		inc	de
-		ld	bc, 7FFDh
+		ld	bc, PORT_ZX128
 		ld	a, 19h
 		jp	40h
 sub_E039:
@@ -893,7 +892,7 @@ BANK_SWITCH:
 		out     (c), a
 		ld      bc, 80h
 		ldir
-		ld      bc, 7FFDh
+		ld      bc, PORT_ZX128
 		ld      a, 1Fh
 		out     (c), a
 		ret
@@ -2297,17 +2296,17 @@ loc_F018:
 		bit	7, a
 		ld	a, c
 		call	z, PRN_ENCODE
-		out	(0FBh),	a
+		out	(PORT_PRN_DATA), a
 		jr	loc_F02A
 loc_F02A:
-		out	(7Bh), a
+		out	(PORT_PRN_STROBE), a
 		jr	loc_F02E
 loc_F02E:
-		out	(0FBh),	a
+		out	(PORT_PRN_DATA), a
 		ret
 LPT_ST:
 					; _SYSTEM:loc_F018p
-		in	a, (1Bh)
+		in	a, (PORT_PRN_READY)
 		jr	loc_F035
 loc_F035:
 		cpl
