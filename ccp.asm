@@ -1,3 +1,4 @@
+CCPSTACK: equ 0b280h
 	INCLUDE "defines.inc"
 
 	ORG	CCP_START
@@ -18,8 +19,8 @@ BOOTCMD:
 	DEFB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 	DEFB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 	DEFB	0,0,0,0,0,0,0,0,0,0,0,0,0
-INPOINT:DEFW	INBUFF+5	;input line pointer
-NAMEPNT:DEFW	INBUFF+5	;input line pointer used for error message. Points to
+INPOINT:DEFW	INBUFF+7	;input line pointer
+NAMEPNT:DEFW	INBUFF+7	;input line pointer used for error message. Points to
 ;			;start of name in error.
 ;
 ;   Routine to print (A) on the console. All registers used.
@@ -27,13 +28,24 @@ NAMEPNT:DEFW	INBUFF+5	;input line pointer used for error message. Points to
 PRINT:	LD	E,A		;setup bdos call.
 	LD	C,2
 	JP	ENTRY
-;
-;   Routine to print (A) on the console and to save (BC).
-;
-PRINTB:	PUSH	BC
-	CALL	PRINT
-	POP	BC
-	RET	
+
+sub_AB12:
+		call    GETDSK
+		add     a, 'A'
+		call    PRINTB
+		ld      a, ':'
+		call    PRINTB
+		ld      a, '\\'
+		call    PRINTB
+		call    GETUSR
+		add     a, '0'
+		cp      ':'
+		jr      c, loc_AB2F
+		add     a, 7	; 10..32 -> A..U
+
+loc_AB2F:
+		jr      PRINTB
+
 ;
 ;   Routine to send a carriage return, line feed combination
 ; to the console.
@@ -46,7 +58,27 @@ CRLF:	LD	A,CR
 ;   Routine to send one space to the console and save (BC).
 ;
 SPACE:	LD	A,' '
-	JR	PRINTB
+
+;
+;   Routine to print (A) on the console and to save (BC).
+;
+PRINTB:	PUSH	BC
+	CALL	PRINT
+	POP	BC
+	RET
+
+;
+;   Read error while TYPEing a file.
+;
+RDERROR:LD	BC,RDERR
+	JR	PLINE
+;
+;   Required file was not located.
+;
+NONE:	LD	BC,NOFILE
+	; JP	PLINE ; now this command is useless
+
+
 ;
 ;   Routine to print character string pointed to be (BC) on the
 ; console. It must terminate with a null byte.
@@ -62,81 +94,60 @@ PLINE2:	LD	A,(HL)
 	CALL	PRINT
 	POP	HL
 	JR	PLINE2
-;
-;   Routine to reset the disk system.
-;
-RESDSK:	LD	C,13
-	JP	ENTRY
-;
-;   Routine to select disk (A).
-;
-DSKSEL:	LD	E,A
-	LD	C,14
-	JP	ENTRY
-;
-;   Routine to call bdos and save the return code. The zero
-; flag is set on a return of 0ffh.
-;
-ENTRY1:	CALL	ENTRY
-	LD	(RTNCODE),A	;save return code.
-	INC	A		;set zero if 0ffh returned.
-	RET	
-;
-;   Routine to open a file. (DE) must point to the FCB.
-;
-OPEN:	LD	C,15
-	JR	ENTRY1
+
 ;
 ;   Routine to open file at (FCB).
 ;
 OPENFCB:XOR	A		;clear the record number byte at fcb+32
 	LD	(FCB+32),A
 	LD	DE,FCB
-	JR	OPEN
+;
+;   Routine to open a file. (DE) must point to the FCB.
+;
+OPEN:	LD	C,15
+	JR	__near_entry1_l1
 ;
 ;   Routine to close a file. (DE) points to FCB.
 ;
 CLOSE:	LD	C,16
-	JR	ENTRY1
-;
-;   Routine to search for the first file with ambigueous name
-; (DE).
-;
-SRCHFST:LD	C,17
-	JR	ENTRY1
+	JR	__near_entry1_l1
 ;
 ;   Search for the next ambigeous file name.
 ;
 SRCHNXT:LD	C,18
-	JR	ENTRY1
+__near_entry1_l1:
+	call ENTRY
+	ld (RTNCODE),a
+	inc a
+	ret
 ;
-;   Search for file at (FCB).
+;   Routine to search for the first file with ambigueous name
+; (DE).
 ;
-SRCHFCB:LD	DE,FCB
-	JR	SRCHFST
+_srchfst_l1:
+	ld      de, FCB 
+SRCHFST:LD	C,17
+	JR	__near_entry1_l1
+
 ;
 ;   Routine to delete a file pointed to by (DE).
 ;
 DELETE:	LD	C,19
-	JP	ENTRY
-;
-;   Routine to call the bdos and set the zero flag if a zero
-; status is returned.
-;
-ENTRY2:	CALL	ENTRY
-	OR	A		;set zero flag if appropriate.
-	RET	
+__near_entry2_l1:
+	JR	__near_entry_l1
+
+sub_AB7E:
+	ld      de, FCB
 ;
 ;   Routine to read the next record from a sequential file.
 ; (DE) points to the FCB.
 ;
 RDREC:	LD	C,20
-	JR	ENTRY2
-;
-;   Routine to read file at (FCB).
-;
-READFCB:LD	DE,FCB
-	JR	RDREC
+
+ENTRY2:	CALL	ENTRY
+	OR	A		;set zero flag if appropriate.
+	RET
+
 ;
 ;   Routine to write the next record of a sequential file.
 ; (DE) points to the FCB.
@@ -147,41 +158,63 @@ WRTREC:	LD	C,21
 ;   Routine to create the file pointed to by (DE).
 ;
 CREATE:	LD	C,22
-	JR	ENTRY1
+	JR	__near_entry1_l1
 ;
 ;   Routine to rename the file pointed to by (DE). Note that
 ; the new name starts at (DE+16).
 ;
 RENAM:	LD	C,23
-	JP	ENTRY
+	JR	__near_entry_l1
 ;
 ;   Get the current user code.
 ;
-GETUSR:	LD	E,0FFH
+GETUSR:	LD	A,0FFH
+GETUSR_l1:
+	LD E, A
 ;
 ;   Routne to get or set the current user code.
 ; If (E) is FF then this is a GET, else it is a SET.
 ;
 GETSETUC: LD	C,32
+__near_entry_l1:
 	JP	ENTRY
 ;
 ;   Routine to set the current drive byte at (TDRIVE).
 ;
-SETCDRV:CALL	GETUSR		;get user number
-	ADD	A,A		;and shift into the upper 4 bits.
-	ADD	A,A
-	ADD	A,A
-	ADD	A,A
-	LD	HL,CDRIVE	;now add in the current drive number.
+SETCDRV:
+	ld c,0Bh
+	call ENTRY
+	or a
+	ret z
+	ld c,001h
+	jr ENTRY2
+GETDSK:
+	ld c,019h
+	jr __near_entry_l1
+DMASET:
+	ld de,00080h
+DMASET_l1:
+	ld c,01ah
+	jr __near_entry_l1
+MOVECD:
+	ld a,(CDRIVE)
+	jr __l1
+SETCDRV_l3:
+	call GETUSR
+	rlca
+	rlca
+	rlca
+	rlca
+	set 3,a
+	jr c,__l2
+	res 3,a
+__l2:
+	and 01fh
+	ld hl,CDRIVE
 	OR	(HL)
 __l1:
 	LD	(TDRIVE),A	;and save.
-	RET	
-;
-;   Move currently active drive down to (TDRIVE).
-;
-MOVECD:	LD	A,(CDRIVE)
-	JR __l1
+	RET
 ;
 ;   Routine to convert (A) into upper case ascii. Only letters
 ; are affected.
@@ -191,7 +224,7 @@ UPPER:	CP	'a'		;check for letters in the range of 'a' to 'z'.
 	CP	'{'
 	RET	NC
 	AND	5FH		;convert it if found.
-	RET	
+	RET
 ;
 ;   Routine to get a line of input. We must check to see if the
 ; user is in (BATCH) mode. If so, then read the input from file
@@ -223,8 +256,8 @@ GETINP:	LD	A,(BATCH)	;if =0, then use console input.
 ;
 	LD	DE,INBUFF+1
 	LD	HL,TBUFF	;data was read into buffer here.
-	LD	B,128		;all 128 characters may be used.
-	CALL	HL2DE		;(HL) to (DE), (B) bytes.
+	LD	BC,0080h		;all 128 characters may be used.
+	LDIR
 	LD	HL,BATCHFCB+14
 	LD	(HL),0		;zero out the 's2' byte.
 	INC	HL		;and decrement the record count.
@@ -240,21 +273,21 @@ GETINP:	LD	A,(BATCH)	;if =0, then use console input.
 ;
 	LD	HL,INBUFF+2
 	CALL	PLINE2
-	CALL	CHKCON		;check console, quit on a key.
+	call SETCDRV
 	JR	Z,GETINP2	;jump if no key is pressed.
+	CALL	CHKCON		;check console, quit on a key.
 ;
 ;   Terminate the submit job on any keyboard input. Delete this
 ; file such that it is not re-started and jump to normal keyboard
 ; input section.
 ;
-	CALL	DELBATCH	;delete the batch file.
 	JP	CMMND1		;and restart command input.
 ;
 ;   Get here for normal keyboard input. Delete the submit file
 ; incase there was one.
 ;
-GETINP1:CALL	DELBATCH	;delete file ($$$.sub).
-	CALL	SETCDRV		;reset active disk.
+GETINP1:CALL	CHKCON
+	CALL	SETCDRV_l3		;reset active disk.
 	LD	C,10		;get line from console device.
 	LD	DE,INBUFF
 	CALL	ENTRY
@@ -276,37 +309,12 @@ GETINP3:INC	HL
 GETINP4:LD	(HL),A		;add trailing null.
 	LD	HL,INBUFF+2
 	LD	(INPOINT),HL	;reset input line pointer.
-	RET	
+	RET
 ;
 ;   Routine to check the console for a key pressed. The zero
 ; flag is set is none, else the character is returned in (A).
 ;
-CHKCON:	LD	C,11		;check console.
-	CALL	ENTRY
-	OR	A
-	RET	Z		;return if nothing.
-	LD	C,1		;else get character.
-	CALL	ENTRY
-	OR	A		;clear zero flag and return.
-	RET	
-;
-;   Routine to get the currently active drive number.
-;
-GETDSK:	LD	C,25
-	JP	ENTRY
-;
-;   Set the stabdard dma address.
-;
-STDDMA:	LD	DE,TBUFF
-;
-;   Routine to set the dma address to (DE).
-;
-DMASET:	LD	C,26
-	JP	ENTRY
-;
-;  Delete the batch file created by SUBMIT.
-;
-DELBATCH: LD	HL,BATCH	;is batch active?
+CHKCON:	LD HL, BATCH
 	LD	A,(HL)
 	OR	A
 	RET	Z
@@ -316,21 +324,10 @@ DELBATCH: LD	HL,BATCH	;is batch active?
 	LD	DE,BATCHFCB	;and delete this file.
 	CALL	DELETE
 	LD	A,(CDRIVE)	;reset current drive.
-	JP	DSKSEL
-;
-;   Check to two strings at (PATTRN1) and (PATTRN2). They must be
-; the same or we halt....
-;
-VERIFY:	LD	DE,PATTRN1	;these are the serial number bytes.
-	LD	HL,PATTRN2	;ditto, but how could they be different?
-	LD	B,6		;6 bytes each.
-VERIFY1:LD	A,(DE)
-	CP	(HL)
-	JP	NZ,HALT		;jump to halt routine.
-	INC	DE
-	INC	HL
-	DJNZ VERIFY1
-	RET	
+DSKSEL:
+	ld e,a
+	ld c,00eh
+	jp ENTRY
 ;
 ;   Print back file name with a '?' to indicate a syntax error.
 ;
@@ -349,7 +346,7 @@ SYNERR1:LD	A,(HL)		;print it until a space or null is found.
 SYNERR2:LD	A,'?'		;add trailing '?'.
 	CALL	PRINT
 	CALL	CRLF
-	CALL	DELBATCH	;delete any batch file.
+	CALL	CHKCON	;delete any batch file.
 	JP	CMMND1		;and restart from console input.
 ;
 ;   Check character at (DE) for legal command input. Note that the
@@ -374,8 +371,7 @@ CHECK:	LD	A,(DE)
 	CP	'<'
 	RET	Z
 	CP	'>'
-	RET	Z
-	RET	
+	RET
 ;
 ;   Get the next non-blank character from (DE).
 ;
@@ -393,11 +389,11 @@ ADDHL:	ADD	A,L
 	LD	L,A
 	RET	NC		;take care of any carry.
 	INC	H
-	RET	
+	RET
 ;
 ;   Convert the first name in (FCB).
 ;
-CONVFST:LD	A,0
+CONVFST:XOR A
 ;
 ;   Format a file name (convert * to '?', etc.). On return,
 ; (A)=0 is an unambigeous name was specified. Enter with (A) equal to
@@ -409,6 +405,8 @@ CONVERT:LD	HL,FCB
 	PUSH	HL
 	XOR	A
 	LD	(CHGDRV),A	;initialize drive change flag.
+	ld a,(UNKVAR1)
+	ld (CHGDRV_2),a
 	LD	HL,(INPOINT)	;set (HL) as pointer into input line.
 	EX	DE,HL
 	CALL	NONBLANK	;get next non-blank character.
@@ -425,12 +423,37 @@ CONVERT:LD	HL,FCB
 	JR	Z,CONVRT2
 	DEC	DE		;nope, move pointer back to the start of the line.
 CONVRT1:LD	A,(CDRIVE)
+	jr $+7
+CONVRT2:
+	inc de
+	ld a,b
+	ld (CHGDRV),a
 	LD	(HL),A
-	JR	CONVRT3
-CONVRT2:LD	A,B
-	LD	(CHGDRV),A	;set change in drives flag.
-	LD	(HL),B
+	ld a,(de)
+	cp '\\'
+	jr nz,CONVRT3
+	inc de
+	ld a,(de)
+	ld b,a
+	inc de
+	ld a,(de)
+	or a
+	jr z,CONVRT2_l0
+	cp '\\'
+	jr nz,CONVRT2_l2
+CONVRT2_l0:
+	LD	A,B
+	sub '0'
+	cp 10
+	jr c,CONVRT2_l1
+	sub 007h
+CONVRT2_l1:
+	LD	(CHGDRV_2),A	;set change in drives flag.
 	INC	DE
+	jr CONVRT3
+CONVRT2_l2:
+	dec de
+	dec de
 ;
 ;   Convert the basic file name.
 ;
@@ -497,7 +520,7 @@ GETEXT9:DEC	C
 	JR	NZ,GETEXT8
 	LD	A,B
 	OR	A
-	RET	
+	RET
 ;
 ;   CP/M command table. Note commands can be either 3 or 4 characters long.
 ;
@@ -538,7 +561,7 @@ SEARCH2:LD	A,(DE)
 	CP	' '
 	JR	NZ,SEARCH4
 	LD	A,C		;set return register for this command.
-	RET	
+	RET
 SEARCH3:INC	HL
 	DJNZ SEARCH3
 SEARCH4:INC	C
@@ -560,18 +583,24 @@ CLEARBUF: XOR	A
 COMMAND:LD	SP,CCPSTACK	;setup stack area.
 	PUSH	BC		;note that (C) should be equal to:
 	LD	A,C		;(uuuudddd) where 'uuuu' is the user number
-	RRA			;and 'dddd' is the drive number.
-	RRA	
-	RRA	
-	RRA	
-	AND	0FH		;isolate the user number.
-	LD	E,A
-	CALL	GETSETUC	;and set it.
-	CALL	RESDSK		;reset the disk system.
-	LD	(BATCH),A	;clear batch mode flag.
+	RRCA			;and 'dddd' is the drive number.
+	RRCA
+	RRCA
+	RRCA
+;set usetr number
+	set 4,a
+	jr c,COMMAND_l1
+	res 4,a
+COMMAND_l1:
+	and 01fh
+	ld (UNKVAR1),a
+	call GETUSR_l1
+	ld c,00dh
+	call ENTRY
+	ld (BATCH),a
 	POP	BC
 	LD	A,C
-	AND	0FH		;isolate the drive number.
+	AND	07H		;isolate the drive number.
 	LD	(CDRIVE),A	;and save.
 	CALL	DSKSEL		;...and select.
 	LD	A,(INBUFF+1)
@@ -582,16 +611,14 @@ COMMAND:LD	SP,CCPSTACK	;setup stack area.
 ;
 CMMND1:	LD	SP,CCPSTACK	;set stack straight.
 	CALL	CRLF		;start a new line on the screen.
-	CALL	GETDSK		;get current drive.
-	ADD	A,'A'
-	CALL	PRINT		;print current drive.
+	CALL	sub_AB12	;get current drive.
 	LD	A,'>'
-	CALL	PRINT		;and add prompt.
+	CALL	PRINTB		;and add prompt.
 	CALL	GETINP		;get line from user.
 ;
 ;   Process command line here.
 ;
-CMMND2:	LD	DE,TBUFF
+CMMND2:
 	CALL	DMASET		;set standard dma address.
 	CALL	GETDSK
 	LD	(CDRIVE),A	;set current drive.
@@ -606,7 +633,7 @@ CMMND2:	LD	DE,TBUFF
 ; with (A) pointing to the last address
 ; in our table which is (UNKNOWN).
 ;
-	LD	HL,CMDADR	;now, look thru our address table for command (A).
+	ld hl,CMDADR
 	LD	E,A		;set (DE) to command number.
 	LD	D,0
 	ADD	HL,DE
@@ -619,27 +646,11 @@ CMMND2:	LD	DE,TBUFF
 ;
 ;   CP/M command address table.
 ;
-CMDADR:	DEFW	DIRECT,ERASE,TYPE,SAVE
-	DEFW	RENAME,USER,UNKNOWN
-;
-;   Halt the system. Reason for this is unknown at present.
-;
-HALT:	LD	HL,76F3H	;'DI HLT' instructions.
-	LD	(CBASE),HL
-	LD	HL,CBASE
-	JP	(HL)
-;
-;   Read error while TYPEing a file.
-;
-RDERROR:LD	BC,RDERR
-	JP	PLINE
+CMDADR:	DEFW	DIRECT_l1,ERASE,TYPE,SAVE
+		DEFW	RENAME,USER,UNKNOWN
 RDERR:	DEFB	'READ ERROR',0
-;
-;   Required file was not located.
-;
-NONE:	LD	BC,NOFILE
-	JP	PLINE
 NOFILE:	DEFB	'NO FILE',0
+
 ;
 ;   Decode a command of the form 'A>filename number{ filename}.
 ; Note that a drive specifier is not allowed on the first file
@@ -664,8 +675,8 @@ DECODE1:LD	A,(HL)
 	AND	0E0H
 	JR	NZ,_j_synerr
 	LD	A,B
-	RLCA	
-	RLCA	
+	RLCA
+	RLCA
 	RLCA			;(A)=(B)*8
 	ADD	A,B		;.......*9
 	JR	C,_j_synerr
@@ -676,7 +687,7 @@ DECODE2:JR	C,_j_synerr
 	LD	B,A		;and save result.
 	DEC	C		;only look at 11 digits.
 	JR	NZ,DECODE1
-	RET	
+	RET
 DECODE3:LD	A,(HL)		;spaces must follow (why?).
 	CP	' '
 	JR	NZ,_j_synerr
@@ -684,25 +695,11 @@ DECODE3:LD	A,(HL)		;spaces must follow (why?).
 DECODE4:DEC	C
 	JR	NZ,DECODE3
 	LD	A,B		;set (A)=the numeric value entered.
-	RET	
+	RET
 
 ;Quorum
 _j_synerr:
 	JP SYNERR
-;
-;   Move 3 bytes from (HL) to (DE). Note that there is only
-; one reference to this at (A2D5h).
-;
-MOVE3:	LD	B,3
-;
-;   Move (B) bytes from (HL) to (DE).
-;
-HL2DE:	LD	A,(HL)
-	LD	(DE),A
-	INC	HL
-	INC	DE
-	DJNZ HL2DE
-	RET	
 ;
 ;   Compute (HL)=(TBUFF)+(A)+(C) and get the byte that's here.
 ;
@@ -710,7 +707,7 @@ EXTRACT:LD	HL,TBUFF
 	ADD	A,C
 	CALL	ADDHL
 	LD	A,(HL)
-	RET	
+	RET
 ;
 ;  Check drive specified. If it means a change, then the new
 ; drive will be selected. In any case, the drive byte of the
@@ -720,35 +717,46 @@ DSELECT:XOR	A		;null out first byte of fcb.
 	LD	(FCB),A
 	LD	A,(CHGDRV)	;a drive change indicated?
 	OR	A
-	RET	Z
+	jr z,DSELECT_l1
 	DEC	A		;yes, is it the same as the current drive?
 	LD	HL,CDRIVE
+	cp (hl)
+	call nz,DSKSEL
+DSELECT_l1:
+	ld hl,CHGDRV_2
+	ld a,(hl)
+	dec hl
 	CP	(HL)
-	RET	Z
-	JP	DSKSEL		;no. Select it then.
+	call nz,GETUSR_l1
+	ret
 ;
 ;   Check the drive selection and reset it to the previous
 ; drive if it was changed for the preceeding command.
 ;
 RESETDR:LD	A,(CHGDRV)	;drive change indicated?
 	OR	A
-	RET	Z
+	jr z,RESETDR_l1
 	DEC	A		;yes, was it a different drive?
 	LD	HL,CDRIVE
 	CP	(HL)
-	RET	Z
-	LD	A,(CDRIVE)	;yes, re-select our old drive.
-	JP	DSKSEL
-;
+	ld a,(hl)
+	call nz,DSKSEL
+RESETDR_l1:
+	ld hl,UNKVAR1
+	ld a,(hl)
+	inc hl
+	jr $-25
+DIRECT_l1:
+	call CONVFST
+	call DSELECT
+	ld hl,FCB+1
 ;**************************************************************
 ;*
 ;*           D I R E C T O R Y   C O M M A N D
 ;*
 ;**************************************************************
 ;
-DIRECT:	CALL	CONVFST		;convert file name.
-	CALL	DSELECT		;select indicated drive.
-	LD	HL,FCB+1	;was any file indicated?
+DIRECT:
 	LD	A,(HL)
 	CP	' '
 	JR	NZ,DIRECT2
@@ -758,13 +766,13 @@ DIRECT1:LD	(HL),'?'
 	DJNZ DIRECT1
 DIRECT2:LD	E,0		;set initial cursor position.
 	PUSH	DE
-	CALL	SRCHFCB		;get first file name.
+	CALL	_srchfst_l1		;get first file name.
 	CALL	Z,NONE		;none found at all?
-DIRECT3:JR	Z,DIRECT9	;terminate if no more names.
+DIRECT3:JP	Z,DIRECT9	;terminate if no more names.
 	LD	A,(RTNCODE)	;get file's position in segment (0-3).
-	RRCA	
-	RRCA	
-	RRCA	
+	RRCA
+	RRCA
+	RRCA
 	AND	60H		;(A)=position*32
 	LD	C,A
 	LD	A,10
@@ -780,12 +788,8 @@ DIRECT3:JR	Z,DIRECT9	;terminate if no more names.
 	JR	NZ,DIRECT4
 	CALL	CRLF		;yes, end this line and start another.
 	PUSH	BC
-	CALL	GETDSK		;start line with ('A:').
+	CALL	sub_AB12		;start line with ('A:').
 	POP	BC
-	ADD	A,'A'
-	CALL	PRINTB
-	LD	A,':'
-	CALL	PRINTB
 	JR	DIRECT5
 DIRECT4:CALL	SPACE		;add seperator between file names.
 	LD	A,':'
@@ -817,10 +821,10 @@ DRECT65:CALL	PRINTB
 	CALL	SPACE		;yes, add seperating space.
 	JR	DIRECT6
 DIRECT7:POP	AF		;get the next file name.
-DIRECT8:CALL	CHKCON		;first check console, quit on anything.
+DIRECT8:CALL	SETCDRV		;first check console, quit on anything.
 	JR	NZ,DIRECT9
 	CALL	SRCHNXT		;get next name.
-	JR	DIRECT3		;and continue with our list.
+	JP	DIRECT3		;and continue with our list.
 DIRECT9:POP	DE		;restore the stack and return to command level.
 	JR __near_getback; // JP GETBACK
 ;
@@ -873,7 +877,7 @@ TYPE2:	LD	A,(HL)		;have we written the entire sector?
 	CP	128
 	JR	C,TYPE3
 	PUSH	HL		;yes, read in the next one.
-	CALL	READFCB
+	CALL	sub_AB7E
 	POP	HL
 	JR	NZ,TYPE4	;end or error?
 	XOR	A		;ok, clear byte counter.
@@ -885,7 +889,7 @@ TYPE3:	INC	(HL)		;count this byte.
 	CP	CNTRLZ		;end of file mark?
 	JR	Z,__near_getback ; JP GETBACK
 	CALL	PRINT		;no, print it.
-	CALL	CHKCON		;check console, quit if anything ready.
+	CALL	SETCDRV		;check console, quit if anything ready.
 	JR	NZ, __near_getback; JP NZ, GETBACK
 	JR	TYPE1
 ;
@@ -929,7 +933,7 @@ SAVE1:	LD	A,H		;done yet?
 	LD	HL,128
 	ADD	HL,DE
 	PUSH	HL		;save it and set the transfer address.
-	CALL	DMASET
+	CALL	DMASET_l1
 	LD	DE,FCB		;write out this sector now.
 	CALL	WRTREC
 	POP	DE		;reset (DE) to the start of the last sector.
@@ -948,7 +952,7 @@ SAVE2:	LD	DE,FCB		;now close the file.
 ;
 SAVE3:	LD	BC,NOSPACE
 	CALL	PLINE
-SAVE4:	CALL	STDDMA		;reset the standard dma address.
+SAVE4:	CALL	DMASET		;reset the standard dma address.
 	JR	__get_getback_2	; JP GETBACK
 NOSPACE:DEFB	'NO SPACE',0
 ;
@@ -963,18 +967,16 @@ RENAME:	CALL	CONVFST		;convert first file name.
 	LD	A,(CHGDRV)	;remember any change in drives specified.
 	PUSH	AF
 	CALL	DSELECT		;and select this drive.
-	CALL	SRCHFCB		;is this file present?
+	CALL	_srchfst_l1		;is this file present?
 	JR	NZ,RENAME6	;yes, print error message.
 	LD	HL,FCB		;yes, move this name into second slot.
 	LD	DE,FCB+16
-	LD	B,16
-	CALL	HL2DE
+	LD	BC,0010h
+	LDIR
 	LD	HL,(INPOINT)	;get input pointer.
 	EX	DE,HL
 	CALL	NONBLANK	;get next non blank character.
 	CP	'='		;only allow an '=' or '_' seperator.
-	JR	Z,RENAME1
-	CP	'_'
 	JR	NZ,RENAME5
 RENAME1:EX	DE,HL
 	INC	HL		;ok, skip seperator.
@@ -993,7 +995,7 @@ RENAME1:EX	DE,HL
 RENAME2:LD	(HL),B		;	reset as per the first file specification.
 	XOR	A
 	LD	(FCB),A		;clear the drive byte of the fcb.
-RENAME3:CALL	SRCHFCB		;and go look for second file.
+RENAME3:CALL	_srchfst_l1		;and go look for second file.
 	JR	Z,RENAME4	;doesn't exist?
 	LD	DE,FCB
 	CALL	RENAM		;ok, rename the file.
@@ -1019,14 +1021,14 @@ EXISTS:	DEFB	'FILE EXISTS',0
 ;**************************************************************
 ;
 USER:	CALL	DECODE		;get numeric value following command.
-	CP	16		;legal user number?
+	CP	32		;legal user number?
 	JR	NC,__near_synerr ; JP NC, SYNERR
 	LD	E,A		;yes but is there anything else?
 	LD	A,(FCB+1)
 	CP	' '
 	JR	Z,__near_synerr	; JP SYNERR	;yes, that is not allowed.
-	CALL	GETSETUC	;ok, set user code.
-	JR	__near_getback1	; JP GETBACK1
+	ld a,e		;ok, set user code.
+	JR	UNKWN1	; JP GETBACK1
 ;
 ;**************************************************************
 ;*
@@ -1034,10 +1036,10 @@ USER:	CALL	DECODE		;get numeric value following command.
 ;*
 ;**************************************************************
 ;
-UNKNOWN:CALL	VERIFY		;check for valid system (why?).
+UNKNOWN:
 	LD	A,(FCB+1)	;anything to execute?
 	CP	' '
-	JR	NZ,UNKWN1
+	JR	NZ,UNKWN1_l1
 	LD	A,(CHGDRV)	;nope, only a drive change?
 	OR	A
 	JR	Z,__near_getback1;	JP Z, GETBACK1	;neither???
@@ -1047,11 +1049,15 @@ UNKNOWN:CALL	VERIFY		;check for valid system (why?).
 	CALL	DSKSEL		;and select this drive.
 	CALL	MOVECD		;set (TDRIVE) also.
 __near_getback1:
-	JP	GETBACK1	;then return.
+	ld a,(CHGDRV_2)
 ;
 ;   Here a file name was typed. Prepare to execute it.
 ;
-UNKWN1:	LD	DE,FCB+9	;an extension specified?
+UNKWN1:	LD	(UNKVAR1), a	;an extension specified?
+	call GETUSR_l1
+	jp GETBACK1
+UNKWN1_l1:
+	ld de,FCB+9
 	LD	A,(DE)
 	CP	' '
 	JR	NZ,__near_synerr	; JP SYNERR ;yes, not allowed.
@@ -1059,34 +1065,40 @@ UNKWN2:	PUSH	DE
 	CALL	DSELECT		;select specified drive.
 	POP	DE
 	LD	HL,COMFILE	;set the extension to 'COM'.
-	CALL	MOVE3
+	ld bc,3
+	ldir
+	call OPENFCB
+	jr nz,UNKWN3_l1
+	xor a
+	call GETUSR_l1
 	CALL	OPENFCB		;and open this file.
-	JP	Z,UNKWN9	;not present?
+	jr nz,$+11
+	ld a,(UNKVAR1)
+	call GETUSR_l1
+	jp UNKWN9
 ;
 ;   Load in the program.
 ;
+UNKWN3_l1:
 	LD	HL,TBASE	;store the program starting here.
 UNKWN3:	PUSH	HL
 	EX	DE,HL
-	CALL	DMASET		;set transfer address.
-	LD	DE,FCB		;and read the next record.
-	CALL	RDREC
-	JR	NZ,UNKWN4	;end of file or read error?
+	CALL	DMASET_l1		;set transfer address.
+	call sub_AB7E
+	jr nz,UNKWN4
 	POP	HL		;nope, bump pointer for next sector.
 	LD	DE,128
 	ADD	HL,DE
-	LD	DE,CBASE	;enough room for the whole file?
-	LD	A,L
-	SUB	E
-	LD	A,H
-	SBC	A,D
-	JR	NC,UNKWN0	;no, it can't fit.
-	JR	UNKWN3
+	jr UNKWN3
 ;
 ;   Get here after finished reading.
 ;
 UNKWN4:	POP	HL
 	DEC	A		;normal end of file?
+	push af
+	ld a,(UNKVAR1)
+	call GETUSR_l1
+	pop af
 	JR	NZ,UNKWN0
 	CALL	RESETDR		;yes, reset previous drive.
 	CALL	CONVFST		;convert the first file name that follows
@@ -1103,8 +1115,8 @@ UNKWN4:	POP	HL
 	LD	(FCB+32),A
 	LD	DE,TFCB		;move it into place at(005Ch).
 	LD	HL,FCB
-	LD	B,33
-	CALL	HL2DE
+	LD	BC,0021h
+	ldir
 	LD	HL,INBUFF+2	;now move the remainder of the input
 UNKWN5:	LD	A,(HL)		;line down to (0080h). Look for a non blank.
 	OR	A		;or a null.
@@ -1129,13 +1141,13 @@ UNKWN7:	LD	A,(HL)		;move it now.
 UNKWN8:	LD	A,B		;now store the character count.
 	LD	(TBUFF),A
 	CALL	CRLF		;clean up the screen.
-	CALL	STDDMA		;set standard transfer address.
-	CALL	SETCDRV		;reset current drive.
+	CALL	DMASET		;set standard transfer address.
+	CALL	SETCDRV_l3		;reset current drive.
 	CALL	TBASE		;and execute the program.
 ;
 ;   Transiant programs return here (or reboot).
 ;
-	LD	SP,BATCH	;set stack first off.
+	LD	SP,CCPSTACK	;set stack first off.
 	CALL	MOVECD		;move current drive into place (TDRIVE).
 	CALL	DSKSEL		;and reselect it.
 	JP	CMMND1		;back to comand mode.
@@ -1147,14 +1159,6 @@ __near_synerr_2:
 	JP	SYNERR
 UNKWN0:	LD	BC,BADLOAD	;read error or won't fit.
 	CALL	PLINE
-	JR	GETBACK
-BADLOAD:DEFB	'BAD LOAD',0
-COMFILE:DEFB	'COM'		;command file extension.
-;
-;   Get here to return to command level. We will reset the
-; previous active drive and then either return to command
-; level directly or print error message and then return.
-;
 GETBACK:CALL	RESETDR		;reset previous drive.
 GETBACK1: CALL	CONVFST		;convert first name in (FCB).
 	LD	A,(FCB+1)	;if this was just a drive change request,
@@ -1163,14 +1167,19 @@ GETBACK1: CALL	CONVFST		;convert first name in (FCB).
 	OR	(HL)
 	JR	NZ,__near_synerr_2	; JP NZ, SYNERR
 	JP	CMMND1		;ok, return to command level.
+BADLOAD:DEFB	'BAD LOAD',0
+COMFILE:DEFB	'COM'		;command file extension.
+;
+;   Get here to return to command level. We will reset the
+; previous active drive and then either return to command
+; level directly or print error message and then return.
+;
+
 ;
 ;   ccp stack area.
 ;
-	DEFB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-	DEFB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-	DEFB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+	DEFB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 	DEFB	0,0,0,0,0,0,0,0,0,0,0,0
-CCPSTACK: EQU	$	;end of ccp stack area.
 ;
 ;   Batch (or SUBMIT) processing information storage.
 ;
@@ -1183,11 +1192,13 @@ FCB:	DEFB	0,'           ',0,0,0,0,0,'           ',0,0,0,0,0
 RTNCODE:DEFB	0		;status returned from bdos call.
 CDRIVE:	DEFB	0		;currently active drive.
 CHGDRV:	DEFB	0		;change in drives flag (0=no change).
-NBYTES:	DEFW	0		;byte counter used by TYPE.
+NBYTES:	DEFB	0		;byte counter used by TYPE.
+UNKVAR1: DEFB	0		; some var that is used frequently in Quorum parts
+CHGDRV_2: DEFB 0
 ;
 ;   Room for expansion?
 ;
-	DEFB	0,0,0,0,0,0,0,0,0,0,0,0,0
+	DEFB	0,0,0,0,0,0,0,0,0,0,0,0
 ;
 ;   Note that the following six bytes must match those at
 ; (PATTRN1) or cp/m will HALT. Why?
