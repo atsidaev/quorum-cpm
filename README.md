@@ -9,7 +9,7 @@ Quorum is one of numerous Russian ZX Spectrum clones, but it has major differenc
 Firstly, it can turn on shadow RAM instead of ROM in lower 16k. Another feature is open access to the
 ports of WD1793 (which is unusual for Betadisk128-inspired FDD controller).
 
-This additions make this machine able to run CP/M-80, which was default OS for this computer.
+These additions made this machine able to run CP/M-80, which was default OS for this computer.
 
 # Goal of the project
 
